@@ -8,13 +8,14 @@ Agentflow is an autonomous software development pipeline. It connects your issue
 graph TD
     subgraph External["External Systems"]
         Issues["Issue Tracker<br/>(GitHub Issues / Jira)"]
-        GitHub["GitHub<br/>(PRs, CI, Code)"]
+        SCM["Code Host<br/>(GitHub PRs / GitLab MRs, CI, Code)"]
         Owner["Human Owner"]
     end
 
     subgraph Agentflow["Agentflow"]
         Orch["Orchestrator<br/>(deterministic, no LLM)"]
         WIP["Work Item Provider"]
+        SCMP["SCM Provider"]
         JR["Job Runner"]
 
         subgraph Agents["Agent Pool"]
@@ -28,28 +29,31 @@ graph TD
             Claude["claude"]
             Codex["codex"]
             Gemini["gemini"]
+            Opencode["opencode<br/>(Copilot / OpenRouter)"]
         end
     end
 
     Owner -->|creates issues| Issues
     Orch -->|reads/writes via| WIP
     WIP --> Issues
+    Orch -->|PRs, CI via| SCMP
+    SCMP --> SCM
     Orch -->|spawns via| JR
     JR --> Agents
     Agents -->|invoke| CLI
-    DA -->|creates PRs| GitHub
+    Agents -->|"verdict / progress / artifact<br/>(agentflow client)"| Orch
+    DA -->|creates PRs/MRs| SCM
     RA -->|posts summaries| Issues
-    RevA -->|posts verdicts| GitHub
-    RevB -->|posts verdicts| GitHub
-    Owner -->|merges PRs| GitHub
+    Owner -->|merges PRs| SCM
 ```
 
 The system consists of:
 
-- **Orchestrator** — a deterministic controller (no LLM) that manages workflow state and spawns agents. It never calls AI providers directly.
+- **Orchestrator** — a deterministic controller (no LLM) that manages workflow state and spawns agents. It never calls AI providers directly. It exposes an **Agent API** (port 9090) that agents call to report structured results.
 - **Work Item Provider** — abstraction over GitHub Issues or Jira. The orchestrator reads and writes work items through this interface.
-- **Job Runner** — abstraction for agent execution. Supports local OS processes, Docker containers, and Kubernetes Jobs.
-- **CLI Providers** — agents interact with AI through CLI tools (`claude`, `codex`, `gemini`), never direct API calls.
+- **SCM Provider** — abstraction over the code host. GitHub (pull requests) and GitLab (merge requests) are interchangeable per-repo implementations; the orchestrator never calls the GitHub or GitLab API directly.
+- **Job Runner** — abstraction for agent execution. Supports local OS processes, Docker containers, and Kubernetes Jobs. It also stages the `agentflow` agent client into each agent's environment at spawn time.
+- **CLI Providers** — agents interact with AI through CLI tools (`claude`, `codex`, `gemini`, `opencode`), never direct API calls.
 
 ## Pipeline
 
@@ -96,7 +100,7 @@ A **Developer Agent** is spawned with a fresh context (no memory of the research
 5. Commits and pushes
 6. Creates or updates a pull request
 
-If CI fails, the orchestrator re-spawns the developer agent with CI failure context (up to the configured `max_ci_failures` before quarantine).
+If CI fails, the orchestrator re-spawns the developer agent with CI failure context. By default the **CI Verdict Gate** is enabled: the CI result is modeled as a verdict and CI must pass before reviewers are spawned. CI failures and review rejections then share a single **unified fix counter** (`max_fix_iterations`, default 5) before quarantine. When the gate is disabled (`ci_verdict_gate: false`), the legacy separate counters apply (`max_ci_failures` and `max_review_iterations`, each default 3). See [Configuration](../configuration.md#ci-and-fix-iterations).
 
 When multiple agents are waiting for a pool slot, the orchestrator prioritizes agents closest to pipeline completion — merge agents before CI fixes, CI fixes before review fixes, and so on. To prevent cascading merge conflicts, new development is limited to one ticket at a time per repo by default (`max_concurrent_development`). See [Agents > Spawn Priority](agents.md#spawn-priority) and [Development WIP Limit](agents.md#development-wip-limit) for details.
 
@@ -107,7 +111,7 @@ When multiple agents are waiting for a pool slot, the orchestrator prioritizes a
 - **Code Quality** — style, security, tests, best practices
 - **Issue Fulfillment** — does the PR fully resolve the original issue?
 
-Each reviewer produces a binary verdict: `APPROVE` or `REQUEST_CHANGES`. Malformed verdicts default to `REQUEST_CHANGES` (fail-safe).
+Each reviewer submits a binary verdict — `APPROVE` or `REQUEST_CHANGES` — by calling the pre-installed `agentflow` client (`agentflow verdict APPROVE "..."`), which delivers the verdict to the orchestrator as structured data. If a reviewer does not call the client, the orchestrator falls back to parsing the verdict from the first token of stdout; a malformed verdict defaults to `REQUEST_CHANGES` (fail-safe). See [Agents > Agent Client](agents.md#agent-client).
 
 The orchestrator applies the configured consensus policy:
 
@@ -117,13 +121,16 @@ The orchestrator applies the configured consensus policy:
 | `majority_approve` | More than 50% must approve (tie = reject) |
 | `any_approve` | At least one approval is sufficient |
 
-On rejection, the developer agent is re-spawned with review feedback. Previous approvals are invalidated — all reviewers re-evaluate. This repeats up to `max_review_iterations` (default: 3) before quarantine.
+On rejection, the developer agent is re-spawned with review feedback. Previous approvals are invalidated — all reviewers re-evaluate. This repeats up to the fix-iteration limit before quarantine (the unified `max_fix_iterations`, default 5, when the CI Verdict Gate is enabled; otherwise `max_review_iterations`, default 3).
 
 The optional **Architecture Guardian** can veto a PR independently of the reviewer consensus — it checks import rules and ADR compliance. See [Review Policies > Architecture Guardian](../customization/policies.md#architecture-guardian).
 
 ### 6. Merge
 
-After all reviewers approve, the orchestrator notifies the human owner. The PR is ready for merge — Agentflow **never merges automatically**. The owner reviews and merges at their discretion.
+After all gates pass (CI verdict + all reviewer verdicts), the next step depends on the repo's `auto_merge` setting:
+
+- **Auto-merge disabled (default):** the orchestrator notifies the human owner. The owner reviews and merges at their discretion. This preserves the human-in-the-loop default.
+- **Auto-merge enabled (opt-in):** the orchestrator merges the PR automatically using the configured strategy and notifies the owner informationally. See [Configuration > Auto-Merge](../configuration.md#auto-merge).
 
 After merge, the orchestrator closes the work item and marks it done.
 

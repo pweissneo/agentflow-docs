@@ -30,22 +30,26 @@ repos:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `url` | string | GitHub repo URL (`owner/repo`, `github.com/owner/repo`, or full HTTPS URL) |
-| `labels` | string[] | GitHub labels that mark issues for Agentflow to process |
+| `url` | string | Repository URL — `owner/repo`, `github.com/owner/repo`, `https://github.com/owner/repo`, or any `https://<host>/owner/repo` (self-hosted GitLab) |
+| `labels` | string[] | Labels that mark issues/tickets for Agentflow to process |
 
 ### Optional Fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `scm` | enum | `"github"` | SCM provider for this repo: `"github"` or `"gitlab"`. When set to `"gitlab"`, a `gitlab:` block is required — see [GitLab repos](#gitlab-repos) below |
 | `model` | string | provider default | AI model override (e.g., `claude-haiku-4-5-20251001`) |
-| `provider` | string | `"claude"` | CLI provider name (`claude`, `codex`, `gemini`) |
+| `provider` | string | `"claude"` | CLI provider name (`claude`, `codex`, `gemini`, `opencode-copilot`, `opencode-openrouter`) |
 | `setup` | string | — | Shell command to run before tests (e.g., `pnpm install`) |
 | `checks` | object | — | Named check commands: `{ lint: "pnpm lint", test: "pnpm test" }` |
 | `ci_check_method` | enum | `"checks"` | How to detect CI status: `"checks"` (Check Runs API — requires classic PAT), `"status"` (Commit Status API — works with fine-grained PATs), or `"none"` (skip CI) |
+| `ci_verdict_gate` | boolean | `true` | Model the CI result as a verdict and require it to pass before reviewers are spawned. See [CI and Fix Iterations](#ci-and-fix-iterations) |
+| `max_fix_iterations` | number | `5` | Unified developer-fix limit (CI + review) before quarantine, used when `ci_verdict_gate` is enabled (minimum: 1) |
 | `merge_strategy` | enum | `"squash"` | PR merge strategy: `"squash"`, `"merge"`, or `"rebase"` |
+| `auto_merge` | object | disabled | Merge the PR automatically when all gates pass. See [Auto-Merge](#auto-merge) |
 | `context_docs` | string[] | — | File paths or URLs for context documents passed to agents |
 | `review_checklist` | string | — | Custom Markdown checklist for reviewers |
-| `max_ci_failures` | number | `3` | Max CI retries before quarantine (minimum: 1) |
+| `max_ci_failures` | number | `3` | Max CI retries before quarantine — only used when `ci_verdict_gate: false` (minimum: 1) |
 | `max_concurrent_development` | number | `1` | Max concurrent new-development agents per repo (minimum: 1) — see [Development WIP Limit](how-it-works/agents.md#development-wip-limit) |
 | `ci_zero_check_grace_period_s` | number | — | Grace period (seconds) when no CI status is set yet |
 | `agent_image` | string | — | Custom container image for agent pods (Kubernetes only) — see [Custom Agent Images](setup/custom-images.md) |
@@ -53,6 +57,83 @@ repos:
 | `prompts` | object | — | Per-role prompt file paths: `{ researcher: "path", developer: "path", reviewer: "path", planner: "path" }` — see [Project-Specific Prompts](customization/project-prompts.md) |
 | `max_project_prompt_bytes` | number | `20480` | Max combined byte size of project-specific prompt files per agent run. Files exceeding the limit are truncated with a warning (minimum: 1) |
 | `application_secrets` | object | — | External service credentials for the target application — see [Application Secrets](customization/application-secrets.md) |
+
+### GitLab repos
+
+To use a self-hosted GitLab project as a repo source, set `scm: gitlab` and add a `gitlab:` block:
+
+```yaml
+repos:
+  platform:
+    url: "https://git.example.com/namespace/platform"
+    labels:
+      - "agentflow"
+    scm: gitlab
+    gitlab:
+      base_url: "https://git.example.com"
+      project_id: 42
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `base_url` | string | yes | Root URL of the GitLab instance |
+| `project_id` | number | yes | Numeric GitLab project ID (found in the project's Settings page) |
+| `webhook_signature` | string | no | Shared secret for validating incoming GitLab webhook events |
+| `merge_method` | enum | no | MR merge strategy: `"merge"`, `"squash"`, or `"rebase_merge"` |
+| `remove_source_branch` | boolean | no | Delete the source branch after merging (default: `false`) |
+
+**Label pre-creation:** At startup, Agentflow automatically creates the `agent:*` label family on every GitLab project that needs it. If label creation fails (for example, due to insufficient token permissions), the orchestrator refuses to start and logs a clear error identifying the affected repo.
+
+**Token:** GitLab repos require a Group or Project Access Token with `api` and `write_repository` scopes. Inject it via the `agentflow auth` CLI — see [Authentication](authentication.md) for details.
+
+**`ci_check_method`:** GitLab does not split CI results into "check runs" and "commit statuses." Leave `ci_check_method` unset (or set it to `"none"`) for GitLab repos.
+
+### CI and Fix Iterations
+
+By default the **CI Verdict Gate** is enabled (`ci_verdict_gate: true`). The CI pipeline result is modeled as a verdict dimension (`ci_pipeline`): CI must produce a green result before AI reviewers are spawned (phased execution), and CI failures and review rejections share a single **unified fix counter**, `max_fix_iterations` (default 5). Each developer fix cycle — whether triggered by a CI failure or a review rejection — increments this one counter; quarantine happens when it is exhausted.
+
+```yaml
+repos:
+  myproject:
+    url: "github.com/org/repo"
+    labels: ["agentflow"]
+    ci_verdict_gate: true      # default
+    max_fix_iterations: 5      # default — covers both CI and review fixes
+```
+
+When the gate is **disabled** (`ci_verdict_gate: false`), reviewers start immediately after the PR is opened without waiting for CI, and the two legacy counters apply independently instead: `max_ci_failures` (default 3) for CI retries and `max_review_iterations` (default 3, see [Reviewers](#reviewers)) for review rounds.
+
+| | CI Verdict Gate **enabled** (default) | CI Verdict Gate **disabled** |
+|--|--|--|
+| Reviewers spawned | after CI passes (phased) | immediately, in parallel with CI |
+| Fix counter | unified `max_fix_iterations` (5) | separate `max_ci_failures` (3) + `max_review_iterations` (3) |
+
+When `ci_check_method: "none"`, the gate is implicitly disabled — there are no check runs to evaluate.
+
+### Auto-Merge
+
+By default Agentflow does **not** merge automatically: when all gates pass, the owner is notified and merges manually (`WAITING_OWNER` → owner merges → `DONE`). Auto-merge is opt-in per repo:
+
+```yaml
+repos:
+  myproject:
+    url: "github.com/org/repo"
+    labels: ["agentflow"]
+    auto_merge:
+      enabled: true           # default: false
+      strategy: squash        # squash | merge | rebase
+      delete_branch: true
+      max_merge_retries: 3
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Merge the PR automatically when the consensus verdict across all gates is `APPROVE` |
+| `strategy` | enum | repo `merge_strategy` | Merge strategy: `"squash"`, `"merge"`, or `"rebase"` |
+| `delete_branch` | boolean | — | Delete the source branch after merge |
+| `max_merge_retries` | number | `3` | Retry attempts if the merge call fails (minimum: 1) |
+
+When enabled, the owner receives an informational notification after the merge rather than an actionable one. If the merge fails (e.g., a conflict appeared), the orchestrator falls back to notifying the owner.
 
 ### Reviewers
 
@@ -77,7 +158,7 @@ repos:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `consensus_policy` | enum | `"all_approve"` | `"all_approve"`, `"majority_approve"`, or `"any_approve"` |
-| `max_review_iterations` | number | `3` | Max review rounds before quarantine (minimum: 1) |
+| `max_review_iterations` | number | `3` | Max review rounds before quarantine — only used when `ci_verdict_gate: false`; otherwise the unified `max_fix_iterations` applies (minimum: 1) |
 | `max_reviewer_retries` | number | `0` | Retry attempts on reviewer provider failures |
 | `dimensions` | array | code_quality + issue_fulfillment | Review dimensions (see below) |
 
@@ -198,7 +279,7 @@ In Kubernetes, the referenced Secret is mounted into agent pods. In Local and Do
 
 ## Providers
 
-Define how Agentflow invokes each AI CLI tool. Built-in defaults exist for Claude, Codex, and Gemini — you only need this section to override them.
+Define how Agentflow invokes each AI CLI tool. Built-in defaults exist for Claude, Codex, and Gemini — you only need this section to override them. opencode providers must be declared explicitly.
 
 ```yaml
 providers:
@@ -230,6 +311,18 @@ providers:
     role_args:
       research: ["--yolo"]
       developer: ["--yolo"]
+  # opencode providers (GITHUB_COPILOT_TOKEN / OPENROUTER_API_KEY)
+  # See: docs/setup/opencode.md
+  opencode-copilot:
+    command: "opencode"
+    args: ["run", "--dangerously-skip-permissions"]
+    model_flag: "--model"
+    timeout_seconds: 600
+  opencode-openrouter:
+    command: "opencode"
+    args: ["run", "--dangerously-skip-permissions"]
+    model_flag: "--model"
+    timeout_seconds: 600
 ```
 
 | Field | Type | Required | Description |
@@ -349,14 +442,17 @@ Enable GitHub webhooks for real-time event processing instead of polling:
 webhooks:
   enabled: true
   secret: "your-webhook-secret"
-  path: "/webhooks/github"
 ```
+
+When enabled, the orchestrator exposes **one webhook URL per configured repo**, following the pattern `/webhooks/github/<repoId>` where `<repoId>` is the key of the entry in `repos:`. Point each repository's GitHub webhook at its own URL.
+
+The legacy single-endpoint URL (`/webhooks/github`) is still accepted as a backwards-compatible alias and continues to dispatch events to the orchestrator, but every delivery on it produces a deprecation warning in the orchestrator log. Migrate to the per-repo URL pattern.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | required | Enable/disable webhooks |
-| `secret` | string | required if enabled | GitHub webhook secret |
-| `path` | string | `"/webhooks/github"` | Webhook endpoint path |
+| `secret` | string | required if enabled | GitHub webhook secret (shared by all configured repos) |
+| `path` | string | `"/webhooks/github"` | Path of the **deprecated** legacy alias — only used when an operator wants to keep an existing GitHub webhook configuration working without re-pointing it to the per-repo URL |
 
 !!! note
     When webhooks are enabled, the [orchestrator polling intervals](#orchestrator) are automatically multiplied by 5x — they serve as a fallback mechanism rather than the primary event source.

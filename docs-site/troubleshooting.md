@@ -84,6 +84,23 @@ This is typically a prompt/context issue:
 - Add `context_docs` to the repo config to provide additional context files
 - Increase the model capability (e.g., switch from Haiku to Sonnet)
 
+### Reviewer approved but the PR was treated as REQUEST_CHANGES
+
+Reviewers submit their verdict by calling the `agentflow verdict` client, which delivers it to the orchestrator as structured data. If the client is unavailable, the orchestrator falls back to parsing the first token of the agent's stdout — and a verdict buried in prose is read as malformed and defaults to `REQUEST_CHANGES`.
+
+Check the orchestrator log for the run:
+
+- `"Using API-submitted verdict"` — the client was used; the verdict is reliable.
+- `"Malformed reviewer verdict — defaulting to REQUEST_CHANGES"` — the client was **not** used and stdout parsing failed.
+
+If you see the malformed path, verify the agent environment can reach the orchestrator:
+
+- `AGENTFLOW_API_URL` and `AGENTFLOW_RUN_ID` must be set in the agent process (the Job Runner injects these automatically)
+- Custom `agent_image` builds must include **Node.js 22+** so the `agentflow` client can run
+- In Kubernetes, agent pods need egress to the orchestrator on port 9090
+
+See [Agents > Agent Client](how-it-works/agents.md#agent-client).
+
 ### Agent timeout
 
 Default timeout is 300 seconds (5 minutes), or 600 seconds for Gemini. Increase per provider:
@@ -210,3 +227,9 @@ pnpm dev 2>&1 | jq 'select(.issueNumber == 42)'
 | `GET /ready` | Readiness check — returns 200 if the orchestrator is ready |
 | `GET /metrics` | Prometheus metrics |
 | `POST /reload` | Trigger configuration reload |
+| `POST /agent/verdict` | Agent API — reviewer verdict submission (used by the `agentflow` client) |
+| `POST /agent/progress` | Agent API — agent progress reports |
+| `POST /agent/artifact` | Agent API — evidence artifact upload |
+| `POST /agent/abort` | Agent API — agent signals an unrecoverable failure |
+
+The `/agent/*` endpoints are called by the [Agent Client](how-it-works/agents.md#agent-client), not by humans.

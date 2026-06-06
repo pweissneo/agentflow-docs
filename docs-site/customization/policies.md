@@ -57,28 +57,32 @@ repos:
 | `majority_approve` | More than 50% must approve | Tie = `REQUEST_CHANGES` |
 | `any_approve` | At least one approval is sufficient | N/A |
 
-### Verdict Parsing
+### Verdict Submission
 
-Each reviewer's output is parsed for a binary verdict:
+Each reviewer submits a binary verdict (`APPROVE` or `REQUEST_CHANGES`) by calling the pre-installed `agentflow verdict` client, which delivers it to the orchestrator as structured data. If the client is not used, the orchestrator falls back to parsing the verdict from stdout:
 
 - First non-whitespace token must be `APPROVE` or `REQUEST_CHANGES`
 - Malformed or unparseable output defaults to `REQUEST_CHANGES` (fail-safe)
 
+See [Agents > Agent Client](../how-it-works/agents.md#agent-client).
+
 ## Iteration Limits
 
-Control how many review cycles are allowed before quarantine:
+Control how many fix cycles are allowed before quarantine. With the **CI Verdict Gate** enabled (default), CI failures and review rejections share one unified counter, `max_fix_iterations` (default 5). With the gate disabled, review rounds are limited separately by `max_review_iterations` (default 3). See [Configuration > CI and Fix Iterations](../configuration.md#ci-and-fix-iterations).
 
 ```yaml
 repos:
   myproject:
+    max_fix_iterations: 5        # unified CI + review counter (gate enabled, default)
     reviewers:
-      max_review_iterations: 3
+      max_review_iterations: 3   # review-only counter (used when ci_verdict_gate: false)
       max_reviewer_retries: 1
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `max_review_iterations` | `3` | Maximum review → fix → re-review cycles. Exceeded = QUARANTINED. |
+| `max_fix_iterations` | `5` | Unified CI + review fix cycles before quarantine (CI Verdict Gate enabled). |
+| `max_review_iterations` | `3` | Maximum review → fix → re-review cycles. Only used when `ci_verdict_gate: false`. |
 | `max_reviewer_retries` | `0` | Retries per reviewer on provider failure (timeout, API error). |
 
 ### Review Iteration Flow
@@ -101,18 +105,19 @@ On each iteration:
 
 ## CI Failure Limits
 
-Control how many CI failures are allowed before quarantine:
+With the CI Verdict Gate enabled (default), CI failures count toward the unified `max_fix_iterations` (see [Iteration Limits](#iteration-limits) above). The settings below apply only when the gate is **disabled** (`ci_verdict_gate: false`), where CI failures have their own separate counter:
 
 ```yaml
 repos:
   myproject:
+    ci_verdict_gate: false
     max_ci_failures: 3
     ci_zero_check_grace_period_s: 120
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `max_ci_failures` | `3` | Maximum CI failure retries. Exceeded = QUARANTINED. |
+| `max_ci_failures` | `3` | Maximum CI failure retries (gate disabled only). Exceeded = QUARANTINED. |
 | `ci_zero_check_grace_period_s` | — | Grace period (seconds) when no CI status is set yet |
 
 On CI failure, the developer agent is re-spawned with the failure output as context.
@@ -187,9 +192,11 @@ Agentflow uses fixed conventions for branches, labels, and PRs:
 | State labels | `agent:claimed`, `agent:in-progress`, etc. | No — same labels used for both GitHub and Jira |
 | Jira board projection | `state_mapping` (status per state) | Yes — configurable Jira status per workflow state |
 | Merge strategy | `squash` (default) | Yes — `merge_strategy` in repo config |
+| Auto-merge | Disabled | Yes — opt-in via `auto_merge.enabled` |
 | Force-push | Disabled | No — never to main/protected branches |
-| Max review iterations | 3 | Yes — `max_review_iterations` |
-| Max CI failures | 3 | Yes — `max_ci_failures` |
+| Max fix iterations (CI + review, gate enabled) | 5 | Yes — `max_fix_iterations` |
+| Max review iterations (gate disabled) | 3 | Yes — `max_review_iterations` |
+| Max CI failures (gate disabled) | 3 | Yes — `max_ci_failures` |
 
 ## Token Security
 

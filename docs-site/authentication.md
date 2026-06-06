@@ -105,6 +105,21 @@ Gemini requires three credential files:
 !!! tip
     Gemini access tokens expire after 1 hour but use a reusable refresh token. Read-only mounts work (in-memory refresh), but writable mounts are preferred.
 
+### opencode (Copilot and OpenRouter)
+
+opencode uses stateless, env-var-only authentication. No auth file is written to disk on invocation.
+
+**opencode-copilot** reads `GITHUB_TOKEN` from the environment. Agentflow stores the credential as `GITHUB_COPILOT_TOKEN` so SCM access and Copilot can use different GitHub accounts. At runtime, `OpencodeCliProvider` remaps `GITHUB_COPILOT_TOKEN` to `GITHUB_TOKEN` inside the opencode subprocess.
+
+- Credential: `GITHUB_COPILOT_TOKEN` (OAuth token from `gh auth token`; PATs of any type are rejected by the Copilot API)
+- Fallback: if `GITHUB_COPILOT_TOKEN` is absent, opencode inherits `GITHUB_TOKEN` (the SCM token)
+
+**opencode-openrouter** reads `OPENROUTER_API_KEY` from the environment.
+
+- Credential: `OPENROUTER_API_KEY` (`sk-or-v1-...` from openrouter.ai)
+
+Both providers are authenticated via `agentflow auth setup`. See the [opencode setup guide](setup/opencode.md) for full instructions.
+
 ## GitHub
 
 GitHub authentication uses a [classic Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-personal-access-token-classic) with the [`repo` scope](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps#available-scopes).
@@ -159,5 +174,7 @@ Per-provider behavior:
 | Claude | Env var only | Simple token, no file-based credentials |
 | Codex | Access-token-only Secret | Prevents single-use refresh token conflicts across pods |
 | Gemini | Full credentials Secret | Reusable refresh token, safe for multi-pod |
+| opencode-copilot | Env var only | Stateless env-var auth (`GITHUB_COPILOT_TOKEN`); no auth.json written |
+| opencode-openrouter | Env var only | Stateless env-var auth (`OPENROUTER_API_KEY`); no auth.json written |
 
 The broker proactively refreshes Codex tokens when the token age exceeds 7 days.

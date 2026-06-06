@@ -53,9 +53,9 @@ Spawned in parallel during the IN_REVIEW state. Each reviewer clones the PR bran
 
 1. Read the PR diff and browse the full repository for context
 2. Evaluate against their assigned dimension
-3. Produce a binary verdict: `APPROVE` or `REQUEST_CHANGES` with findings
+3. Submit a binary verdict — `APPROVE` or `REQUEST_CHANGES` — by calling `agentflow verdict` (see [Agent Client](#agent-client))
 
-**Output:** A comment posted on the PR with the verdict (first token) and detailed findings.
+**Output:** A structured verdict delivered to the orchestrator via the Agent Client, plus a comment posted on the PR with the verdict and detailed findings. If the agent does not call the client, the orchestrator falls back to reading the verdict from the first token of stdout.
 
 Two default dimensions:
 
@@ -71,6 +71,27 @@ Optional. Spawned when an issue matches planner criteria (label or body length t
 **Input:** Issue details, repo URL
 
 **What it does:** Breaks large issues into sub-issues with dependency ordering.
+
+## Agent Client
+
+Every agent receives a small command-line tool, `agentflow`, on its `PATH` at spawn time. It is how agents report structured results back to the orchestrator — submitting a verdict, reporting progress, uploading evidence, or signalling an unrecoverable failure. The tool wraps the orchestrator's HTTP Agent API (port 9090) so agents never have to hand-write `curl`/`jq` requests.
+
+| Command | Purpose |
+|---------|---------|
+| `agentflow verdict APPROVE\|REQUEST_CHANGES "<findings>"` | Reviewer submits its verdict as structured data. `--findings-file <path>` reads multi-line findings from a file. |
+| `agentflow progress "<activity>"` | Report current activity so operators can see what a long-running agent is doing. |
+| `agentflow artifact <path>` | Upload a file (screenshot, test output). Images are embedded as links in PR and work-item comments. |
+| `agentflow abort "<reason>"` | Signal an unrecoverable failure so the orchestrator fails fast instead of waiting for the timeout. |
+
+**Why it exists:** earlier versions embedded raw `curl` commands in agent prompts. Small models frequently skipped or malformed them, so the orchestrator fell back to parsing stdout and a correctly-approved PR could be misread as `REQUEST_CHANGES`. A single memorable command makes the structured path reliable.
+
+**Graceful degradation:** the client is best-effort. If `AGENTFLOW_API_URL`/`AGENTFLOW_RUN_ID` are unset or the call fails, it warns and exits non-zero without failing the agent — the orchestrator falls back to stdout parsing. Agents that never call it work exactly as before.
+
+**Distribution:** the Job Runner stages the binary into each agent's environment at spawn time — written to the workspace `PATH` for local processes, or staged by an init container for Kubernetes pods. It is always the same version as the running orchestrator. Custom agent images need Node.js 22+ (see [Custom Agent Images](../setup/custom-images.md)).
+
+### Evidence Artifacts
+
+When a reviewer verifies behaviour at runtime (e.g. a Playwright screenshot proving a feature works), it uploads the file with `agentflow artifact`. The orchestrator stores it and embeds image links in both the GitHub PR comment and the Jira work-item comment, so the owner sees the evidence without running the app. Artifacts survive pod deletion and are cleaned up after a configurable retention period.
 
 ## Project-Specific Prompts
 
@@ -104,14 +125,16 @@ sequenceDiagram
 
     O->>JR: start(role, context, provider)
     JR-->>O: run_id
-    JR->>A: launch isolated process
+    JR->>A: stage agentflow client + launch isolated process
 
     loop Agent execution
         A->>CLI: invoke(prompt, context)
         CLI-->>A: LLM response
         A->>GH: read/write artifacts
+        A->>O: agentflow progress / artifact (best-effort)
     end
 
+    A->>O: agentflow verdict (reviewers) / abort (on failure)
     A-->>JR: exit with result
 
     loop Orchestrator polling

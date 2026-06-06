@@ -40,7 +40,7 @@ The orchestrator uses this image for the main agent container in **all** pods sp
 
 ### What Happens Inside the Pod
 
-1. **Init container** (optional) — copies provider credentials from a Secret mount to writable paths
+1. **Init containers** — copy provider credentials from a Secret mount to writable paths, and stage the `agentflow` agent client onto the pod's `PATH` (`/tmp/.agentflow/bin`). Both run from the default orchestrator image, not your custom one.
 2. **Repo clone** — the agent runner clones your repo via `git clone` into `/tmp/agentflow-runs/{runId}/repo/`
 3. **Setup command** — if `setup` is configured, it is injected into the AI agent's prompt as an instruction to run before making changes
 4. **Agent work** — the AI CLI tool runs in the cloned repo directory
@@ -56,7 +56,7 @@ Your image **must** have:
 
 | Requirement | Why |
 |-------------|-----|
-| `node` (22+) + `corepack` | Runs the agent runner; corepack enables pnpm for the Agentflow workspace |
+| `node` (22+) + `corepack` | Runs the agent runner and the `agentflow` agent client; corepack enables pnpm for the Agentflow workspace |
 | `git` | Clones the repo at runtime |
 | At least one AI CLI (`claude`, `codex`, `gemini`) | The agent invokes it to do the actual work |
 | Non-root user with **UID 1001, GID 1001** | K8s security context enforces this |

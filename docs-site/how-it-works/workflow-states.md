@@ -20,8 +20,9 @@ stateDiagram-v2
     PR_OPEN --> QUARANTINED: unresolvable merge conflict
     IN_REVIEW --> APPROVED: all reviewers approve
     IN_REVIEW --> CHANGES_REQUESTED: reviewer rejects
-    IN_REVIEW --> QUARANTINED: max review iterations
+    IN_REVIEW --> QUARANTINED: max fix iterations
     CHANGES_REQUESTED --> IN_PROGRESS: developer fixes
+    APPROVED --> DONE: auto-merge (if enabled)
     APPROVED --> WAITING_OWNER: owner notified
     WAITING_OWNER --> DONE: PR merged
     WAITING_OWNER --> FAILED: PR closed without merge
@@ -51,7 +52,7 @@ stateDiagram-v2
 | **PR_OPEN** | PR exists, waiting for CI | CI green → IN_REVIEW; CI red → retry or quarantine |
 | **IN_REVIEW** | Reviewer agents are evaluating the PR | Approve → APPROVED; Reject → CHANGES_REQUESTED |
 | **CHANGES_REQUESTED** | Review feedback received, developer fixes needed | Developer re-spawned → back to IN_PROGRESS |
-| **APPROVED** | All reviewers approved | Owner is notified |
+| **APPROVED** | All gates passed (CI + reviewers) | Auto-merge if enabled → DONE; otherwise owner is notified |
 | **WAITING_OWNER** | PR ready for human merge | Merged → DONE; Closed → FAILED |
 | **DONE** | Work item completed | Terminal state |
 | **FAILED** | Unrecoverable error occurred | Terminal state |
@@ -109,8 +110,7 @@ Multiple Agentflow states can project to the same Jira status. If the status get
 
 **QUARANTINED** — the work item exceeded a retry limit:
 
-- CI failures exceeded `max_ci_failures` (default: 3)
-- Review iterations exceeded `max_review_iterations` (default: 3)
+- Fix iterations exceeded the limit. With the CI Verdict Gate enabled (default), CI failures and review rejections share the unified `max_fix_iterations` (default: 5). With the gate disabled, the legacy separate counters apply: `max_ci_failures` (default: 3) and `max_review_iterations` (default: 3). See [Configuration > CI and Fix Iterations](../configuration.md#ci-and-fix-iterations).
 - Merge conflict that couldn't be auto-resolved
 
 Quarantined items need human triage. The owner is notified and can either fix the issue manually or remove the label to restart processing.

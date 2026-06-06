@@ -50,6 +50,9 @@ nav:
       - Kubernetes: setup/kubernetes.md
       - Custom Agent Images: setup/custom-images.md
       - Local (Development): setup/local.md
+      - GitHub SCM: setup/github.md
+      - GitLab SCM: setup/gitlab.md
+      - opencode (Copilot + OpenRouter): setup/opencode.md
   - Authentication: authentication.md
   - Configuration: configuration.md
   - How It Works:
