@@ -92,7 +92,7 @@ Get Agentflow running and processing its first issue.
       tag: "latest"
 
     config:
-      agentflow: |
+      content: |
         repos:
           myproject:
             url: "https://github.com/your-org/your-repo"
@@ -129,10 +129,10 @@ Get Agentflow running and processing its first issue.
 
 === "Kubernetes"
 
-    Credentials are provided via Helm `secrets` values. For interactive auth after deployment:
+    Credentials are provided via Helm `secrets` values. To generate them, run host-side auth with the Kubernetes target and apply the resulting Secret:
 
     ```bash
-    kubectl exec -it -n agentflow deployment/agentflow-orchestrator -- agentflow auth init
+    npx agentflow auth setup --config config/agentflow.yaml --target k8s
     ```
 
 See [Authentication](authentication.md) for details on each provider's flow.

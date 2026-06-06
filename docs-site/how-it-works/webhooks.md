@@ -2,14 +2,14 @@
 
 By default, Agentflow discovers work and detects changes by **polling** — scanning the issue tracker and checking PR/CI status on fixed intervals. Webhooks let the code host push events to Agentflow in real time instead, so the orchestrator reacts within seconds rather than waiting for the next poll cycle.
 
-Webhooks are optional. When enabled, polling is kept as a fallback (its intervals are automatically slowed by 5×), so a missed or undelivered webhook never strands a work item.
+Webhooks are optional. When enabled, the discovery polling intervals (`issue_scan` and `merge_poll`) are automatically slowed by 5× and serve as a fallback, so a missed or undelivered webhook never strands a work item. (The `agent_poll` interval, which tracks a running agent's own progress, is unaffected.)
 
 ## Polling vs Webhooks
 
 ```mermaid
 graph TD
     subgraph Polling["Polling (default)"]
-        P1["Timer fires<br/>(issue_scan / agent_poll / merge_poll)"] --> P2["Orchestrator queries<br/>issue tracker + SCM"]
+        P1["Timer fires<br/>(issue_scan / merge_poll)"] --> P2["Orchestrator queries<br/>issue tracker + SCM"]
         P2 --> P3["Compare to known state"]
     end
 
@@ -68,7 +68,7 @@ webhooks:
   secret: "your-webhook-secret"   # GitHub: shared HMAC secret
 ```
 
-See [Configuration > Webhooks](../configuration.md#webhooks) for all fields. When enabled, polling intervals are multiplied by 5× automatically — they become a safety net, not the primary trigger.
+See [Configuration > Webhooks](../configuration.md#webhooks) for all fields. When enabled, the discovery polling intervals (`issue_scan`, `merge_poll`) are multiplied by 5× automatically — they become a safety net, not the primary trigger. `agent_poll` is unaffected.
 
 ### 2. Register the webhook on the code host
 

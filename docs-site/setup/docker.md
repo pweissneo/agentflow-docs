@@ -85,11 +85,14 @@ curl http://localhost:9090/health
 
 ## 4. In-Container Authentication (Alternative)
 
-Instead of host-side credentials, you can authenticate inside the running container:
+Generate credentials host-side and write them to `.env.docker`:
 
 ```bash
-docker exec -it agentflow-orchestrator agentflow auth init
+npx agentflow auth setup --config config/agentflow.yaml --target env-docker
 ```
+
+!!! note
+    In-container authentication (`agentflow auth init`) is planned but not yet available — use the host-side `auth setup` flow for now.
 
 This runs interactive OAuth flows for each configured provider and stores credentials on the container's persistent volume. Credentials survive container restarts.
 
@@ -112,13 +115,13 @@ services:
 
 ### Volumes
 
-| Mount | Purpose |
-|-------|---------|
-| `./config:/app/config:ro` | Configuration (read-only) |
-| `~/.codex:/home/agentflow/.codex` | Codex subscription auth (optional) |
-| `~/.gemini:/home/agentflow/.gemini` | Gemini subscription auth (optional) |
+| Mount | Purpose | Default |
+|-------|---------|---------|
+| `./config:/app/config:ro` | Configuration (read-only) | active |
+| `~/.codex:/home/agentflow/.codex` | Codex subscription auth | commented out |
+| `~/.gemini:/home/agentflow/.gemini` | Gemini subscription auth | commented out |
 
-Uncomment the credential volume mounts in `docker-compose.yml` if you prefer mounting host credentials directly.
+Only the config mount is active by default. Uncomment the credential volume mounts in `docker-compose.yml` if you prefer mounting host credentials directly.
 
 ### Image Details
 

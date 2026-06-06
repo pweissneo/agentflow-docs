@@ -1,41 +1,35 @@
 # Authentication
 
-Agentflow needs credentials for AI providers and your work item provider (GitHub or Jira). There are two authentication paths depending on how you deploy.
+Agentflow needs credentials for AI providers and your work item provider (GitHub or Jira). Credentials are generated host-side with `agentflow auth setup` and injected via `.env.docker`, a Kubernetes Secret, or stdout.
 
 ```mermaid
 graph TD
-    subgraph Setup["auth setup (host-side)"]
-        S1["Run on your machine"] --> S2["Browser OAuth flows"]
-        S2 --> S3{"--target?"}
-        S3 -->|docker| S4[".env.docker"]
-        S3 -->|k8s| S5["kubectl create secret"]
-    end
-
-    subgraph Init["auth init (in-container)"]
-        I1["docker/kubectl exec"] --> I2["Browser OAuth flows"]
-        I2 --> I3["Persistent volume<br/>/home/agentflow/.credentials/"]
-    end
+    S1["agentflow auth setup<br/>(on your machine)"] --> S2["Browser OAuth flows"]
+    S2 --> S3{"--target<br/>(prompts if omitted)"}
+    S3 -->|env-docker| S4[".env.docker"]
+    S3 -->|k8s| S5["kubectl create secret"]
+    S3 -->|stdout| S6["print to stdout"]
 
     S4 --> ORCH["Orchestrator"]
     S5 --> ORCH
-    I3 --> ORCH
+    S6 --> ORCH
     ORCH -->|local / docker| AGENT["Agent process<br/>(env vars)"]
     ORCH -->|kubernetes| BROKER["Credential Broker<br/>(per-pod secrets)"]
     BROKER --> POD["Agent pod"]
 
-    style Setup fill:#e3f2fd
-    style Init fill:#e8f5e9
+    style S1 fill:#e3f2fd
 ```
 
-## Two Auth Paths
+## `agentflow auth setup`
 
-### `agentflow auth setup` (Host-Side)
-
-Runs on your machine. Detects providers from your config, runs OAuth flows, and writes credentials to `.env.docker` (Docker Compose) or outputs a `kubectl create secret` command (Kubernetes).
+Runs on your machine. Detects providers from your config, runs OAuth flows, and writes credentials to `.env.docker` (Docker Compose), outputs a `kubectl create secret` command (Kubernetes), or prints to stdout.
 
 ```bash
-# Docker Compose target (default)
+# Prompts for the output target (env-docker, k8s, or stdout) when --target is omitted
 npx agentflow auth setup --config config/agentflow.yaml
+
+# Docker Compose target (writes .env.docker)
+npx agentflow auth setup --config config/agentflow.yaml --target env-docker
 
 # Kubernetes target
 npx agentflow auth setup --config config/agentflow.yaml --target k8s
@@ -44,24 +38,11 @@ npx agentflow auth setup --config config/agentflow.yaml --target k8s
 npx agentflow auth setup --config config/agentflow.yaml --force
 ```
 
-Best for CI/CD environments or when you prefer host-side credential management.
-
-### `agentflow auth init` (In-Container)
-
-Runs inside the container. Performs OAuth flows and stores credentials on the persistent volume at `/home/agentflow/.credentials/`.
-
-```bash
-# Docker Compose
-docker exec -it agentflow-orchestrator agentflow auth init
-
-# Kubernetes
-kubectl exec -it -n agentflow deployment/agentflow-orchestrator -- agentflow auth init
-```
-
-Credentials survive container restarts (Docker named volume / Kubernetes PVC). Recommended for interactive deployments.
+!!! note "In-container `auth init` is planned, not yet available"
+    A future `agentflow auth init` command will run the OAuth flows *inside* the container and store credentials on the persistent volume — convenient for interactive deployments where you don't want host-side credential handling. It is not implemented yet; use `auth setup` for now.
 
 !!! warning
-    Both commands require an interactive terminal with browser access. They cannot run inside automated pipelines.
+    `auth setup` requires an interactive terminal with browser access. It cannot run inside automated pipelines.
 
 ## Verifying Credentials
 
@@ -83,8 +64,7 @@ Claude uses OAuth tokens with approximately one year validity.
 
 **Credential output:**
 
-- Host-side: `CLAUDE_CODE_OAUTH_TOKEN` written to `.env.docker`
-- In-container: token stored in `/home/agentflow/.credentials/`
+- `CLAUDE_CODE_OAUTH_TOKEN` — written to `.env.docker`, the K8s Secret (`claudeOauthToken`), or stdout depending on `--target`
 - Fallback: set `ANTHROPIC_API_KEY` environment variable (API key, not OAuth)
 
 ```bash
@@ -100,9 +80,8 @@ Codex uses a device authorization flow.
 
 **Credential output:**
 
-- Host-side: `OPENAI_API_KEY` written to `.env.docker`
-- In-container: `auth.json` stored in `/home/agentflow/.credentials/`
-- Fallback: set `OPENAI_API_KEY` environment variable
+- Subscription (device-auth): produces `~/.codex/auth.json`, mounted into the container (Docker Compose) or stored as the `codexAuthJson` K8s Secret key
+- Fallback: set `OPENAI_API_KEY` environment variable (API key)
 
 !!! note "Codex token rotation"
     Codex uses single-use refresh tokens — each token refresh invalidates the previous one. In Kubernetes, each agent pod needs independent credentials. The Credential Broker handles this by vending access-token-only credentials to agent pods, preventing refresh token conflicts.
@@ -115,8 +94,7 @@ Gemini uses a custom OAuth PKCE flow with the Gemini CLI's public client credent
 
 **Credential output:**
 
-- Host-side: copies host `~/.gemini/` tokens to `.env.docker`
-- In-container: credentials stored in `/home/agentflow/.credentials/`
+- Subscription (OAuth): produces the three Gemini credential files, mounted into the container (Docker Compose) or stored as the `geminiCredentials`, `geminiSettings`, and `geminiGoogleAccounts` K8s Secret keys
 - Fallback: set `GEMINI_API_KEY` environment variable
 
 Gemini requires three credential files:

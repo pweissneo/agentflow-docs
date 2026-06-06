@@ -9,11 +9,8 @@ Common issues and how to resolve them.
 Claude OAuth tokens last approximately one year. If expired, re-run the auth flow:
 
 ```bash
-# Host-side
+# Re-authenticate (host-side) and re-inject the credential
 npx tsx apps/agentflow/src/cli.ts auth setup --config config/agentflow.yaml --force
-
-# Or in-container
-docker exec -it agentflow-orchestrator agentflow auth init
 ```
 
 If using an API key instead of OAuth, verify `ANTHROPIC_API_KEY` is set.
@@ -237,9 +234,9 @@ pnpm dev 2>&1 | jq 'select(.issueNumber == 42)'
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /health` | Liveness check — returns 200 if the process is running |
-| `GET /ready` | Readiness check — returns 200 if the orchestrator is ready |
+| `GET /health` | Liveness and readiness check — returns 200 if the process is running |
 | `GET /metrics` | Prometheus metrics |
+| `GET /dashboard` | Operational dashboard |
 | `POST /reload` | Trigger configuration reload |
 | `POST /agent/verdict` | Agent API — reviewer verdict submission (used by the `agentflow` client) |
 | `POST /agent/progress` | Agent API — agent progress reports |

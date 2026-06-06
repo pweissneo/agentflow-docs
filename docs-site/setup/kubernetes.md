@@ -27,7 +27,7 @@ image:
   tag: "latest"
 
 config:
-  agentflow: |
+  content: |
     repos:
       myproject:
         url: "https://github.com/your-org/your-repo"
@@ -76,11 +76,14 @@ kubectl -n agentflow logs deployment/agentflow-orchestrator -f
 
 ## 4. Authenticate Providers (In-Cluster)
 
-For interactive authentication inside the running pod:
+Generate credentials host-side and inject them as the Kubernetes Secret:
 
 ```bash
-kubectl exec -it -n agentflow deployment/agentflow-orchestrator -- agentflow auth init
+npx agentflow auth setup --config config/agentflow.yaml --target k8s
 ```
+
+!!! note
+    In-container authentication (`agentflow auth init`) is planned but not yet available — use the host-side `auth setup --target k8s` flow for now.
 
 Or generate credentials on the host and create a Kubernetes Secret:
 
@@ -110,10 +113,11 @@ secrets:
   anthropicApiKey: ""          # Claude API key (fallback)
   openaiApiKey: ""             # Codex API key
   geminiApiKey: ""             # Gemini API key (if not using OAuth)
-  geminiOauthCreds: ""         # Gemini OAuth credentials JSON
+  geminiCredentials: ""        # Gemini OAuth credentials JSON (oauth_creds.json)
   geminiSettings: ""           # Gemini settings JSON
   geminiGoogleAccounts: ""     # Gemini Google accounts JSON
-  googleServiceAccountJson: "" # Google service account JSON
+  googleCredentials: ""        # Google service account JSON
+  codexAuthJson: ""            # Codex auth.json (OAuth)
   jiraEmail: ""                # Jira email
   jiraApiToken: ""             # Jira API token
   jiraBaseUrl: ""              # Jira Cloud URL
@@ -222,19 +226,19 @@ ingress:
 ### Probes
 
 ```yaml
-livenessProbe:
-  httpGet: { path: /health, port: http }
-  initialDelaySeconds: 30
-  periodSeconds: 30
-  timeoutSeconds: 3
-  failureThreshold: 3
-
-readinessProbe:
-  httpGet: { path: /ready, port: http }
-  initialDelaySeconds: 10
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 3
+probes:
+  liveness:
+    httpGet: { path: /health, port: http }
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    httpGet: { path: /health, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
 ```
 
 ### Security Context

@@ -78,9 +78,9 @@ repos:
 |-------|------|----------|-------------|
 | `base_url` | string | yes | Root URL of the GitLab instance |
 | `project_id` | number | yes | Numeric GitLab project ID (found in the project's Settings page) |
-| `webhook_signature` | string | no | Shared secret for validating incoming GitLab webhook events |
-| `merge_method` | enum | no | MR merge strategy: `"merge"`, `"squash"`, or `"rebase_merge"` |
-| `remove_source_branch` | boolean | no | Delete the source branch after merging (default: `false`) |
+| `webhook_signature` | enum | no | Signature scheme for incoming webhooks: `"hmac"` (HMAC-SHA256 over the body, preferred) or `"token"` (shared `X-Gitlab-Token`) |
+| `merge_method` | enum | no | MR merge strategy: `"squash"`, `"merge"`, or `"rebase"` (default: `"merge"`) |
+| `remove_source_branch` | boolean | no | Delete the source branch after merging (default: `true`) |
 
 **Label pre-creation:** At startup, Agentflow automatically creates the `agent:*` label family on every GitLab project that needs it. If label creation fails (for example, due to insufficient token permissions), the orchestrator refuses to start and logs a clear error identifying the affected repo.
 
@@ -407,7 +407,7 @@ orchestrator:
 | `heartbeat_ttl` | number | `1800` | Claim expiration time (30 minutes) |
 | `waiting_owner_reminder_interval` | number | `172800` | Remind owner to merge (48 hours, minimum: 60) |
 
-When webhooks are enabled, these intervals are automatically multiplied by 5 (they serve as fallback).
+When webhooks are enabled, the discovery intervals `issue_scan` and `merge_poll` are automatically multiplied by 5 (they serve as fallback). `agent_poll` is unaffected.
 
 ## GitHub
 
@@ -455,7 +455,7 @@ The legacy single-endpoint URL (`/webhooks/github`) is still accepted as a backw
 | `path` | string | `"/webhooks/github"` | Path of the **deprecated** legacy alias — only used when an operator wants to keep an existing GitHub webhook configuration working without re-pointing it to the per-repo URL |
 
 !!! note
-    When webhooks are enabled, the [orchestrator polling intervals](#orchestrator) are automatically multiplied by 5x — they serve as a fallback mechanism rather than the primary event source.
+    When webhooks are enabled, the discovery [polling intervals](#orchestrator) `issue_scan` and `merge_poll` are automatically multiplied by 5x — they serve as a fallback mechanism rather than the primary event source. `agent_poll` is unaffected.
 
 ## Server
 
