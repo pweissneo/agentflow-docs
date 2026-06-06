@@ -14,6 +14,7 @@ stateDiagram-v2
     PLANNED --> RESEARCHING: research agent spawned
     RESEARCHING --> IN_PROGRESS: research complete
     IN_PROGRESS --> PR_OPEN: PR created
+    IN_PROGRESS --> IN_REVIEW: already implemented (skip PR + CI)
     PR_OPEN --> IN_REVIEW: CI green
     PR_OPEN --> IN_PROGRESS: CI failed (retry)
     PR_OPEN --> QUARANTINED: CI max failures
@@ -48,7 +49,7 @@ stateDiagram-v2
 | **PLANNING** | Planner agent is breaking down the issue | On completion, transitions to PLANNED |
 | **PLANNED** | Plan complete, sub-issues created | Research agent is spawned |
 | **RESEARCHING** | Research agent is gathering context | On completion, transitions to IN_PROGRESS |
-| **IN_PROGRESS** | Developer agent is implementing changes | PR is created → PR_OPEN |
+| **IN_PROGRESS** | Developer agent is implementing changes | PR is created → PR_OPEN; or, if the work is already done, → IN_REVIEW (PR and CI skipped, fulfillment reviewer verifies) |
 | **PR_OPEN** | PR exists, waiting for CI | CI green → IN_REVIEW; CI red → retry or quarantine |
 | **IN_REVIEW** | Reviewer agents are evaluating the PR | Approve → APPROVED; Reject → CHANGES_REQUESTED |
 | **CHANGES_REQUESTED** | Review feedback received, developer fixes needed | Developer re-spawned → back to IN_PROGRESS |

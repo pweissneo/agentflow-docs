@@ -43,6 +43,8 @@ The developer agent is re-spawned in three fix scenarios:
 | Review rejection | Review feedback as structured TODO list + iteration number |
 | Merge conflict | Conflicting files + base branch for rebase |
 
+**Already-implemented path:** If the developer agent determines the issue's acceptance criteria are *already satisfied* by the current codebase, it makes no changes and reports this with evidence. The orchestrator skips PR creation and CI, and spawns only the issue-fulfillment reviewer to independently verify the claim. If verified, the ticket goes straight to DONE; if not, it falls back to normal implementation. See [Workflow States](workflow-states.md).
+
 ### Reviewer Agents
 
 Spawned in parallel during the IN_REVIEW state. Each reviewer clones the PR branch for full codebase access.
@@ -71,6 +73,16 @@ Optional. Spawned when an issue matches planner criteria (label or body length t
 **Input:** Issue details, repo URL
 
 **What it does:** Breaks large issues into sub-issues with dependency ordering.
+
+### Merge Agent
+
+Optional. Spawned when an **approved** PR has a merge conflict with the base branch (e.g., another PR merged first), if `auto_merge_conflict_resolution` is enabled.
+
+**Input:** Conflict context — the ticket, PR, review history, and the conflicting files against the current base branch.
+
+**What it does:** Rebases the branch onto the current base and resolves the conflict under strict constraints (it may only resolve the conflict, not change unrelated behavior). On success, the PR re-enters CI and review. On failure, it escalates to `WAITING_OWNER` with diagnostic context for the human to resolve.
+
+Merge agents are short-lived (typically 30–60 seconds) and run at the highest [spawn priority](#spawn-priority) — finishing near-done work before starting new development.
 
 ## Agent Client
 

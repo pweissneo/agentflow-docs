@@ -106,6 +106,24 @@ When multiple agents are waiting for a pool slot, the orchestrator prioritizes a
 
 ### 5. Review
 
+With the CI Verdict Gate enabled (default), review runs in two phases: CI must produce a passing verdict before any AI reviewer is spawned. A red pipeline sends the PR straight back to a developer fix without spending reviewer time on code that doesn't build.
+
+```mermaid
+graph TD
+    PR["PR opened"] --> CI{"Phase 1:<br/>CI verdict"}
+    CI -->|red| Fix["Developer fix<br/>(counts toward max_fix_iterations)"]
+    Fix --> PR
+    CI -->|green| Rev["Phase 2:<br/>spawn AI reviewers"]
+    Rev --> Cons{"Consensus<br/>policy"}
+    Cons -->|all approve| Approved["APPROVED"]
+    Cons -->|any reject| Fix
+
+    style CI fill:#fff3e0
+    style Rev fill:#e8f5e9
+```
+
+When the gate is disabled (`ci_verdict_gate: false`), reviewers start immediately after the PR opens, in parallel with CI.
+
 **Reviewer Agents** are spawned in parallel, each with a fresh context. By default, two dimensions are evaluated:
 
 - **Code Quality** — style, security, tests, best practices

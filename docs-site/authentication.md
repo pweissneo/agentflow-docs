@@ -2,6 +2,31 @@
 
 Agentflow needs credentials for AI providers and your work item provider (GitHub or Jira). There are two authentication paths depending on how you deploy.
 
+```mermaid
+graph TD
+    subgraph Setup["auth setup (host-side)"]
+        S1["Run on your machine"] --> S2["Browser OAuth flows"]
+        S2 --> S3{"--target?"}
+        S3 -->|docker| S4[".env.docker"]
+        S3 -->|k8s| S5["kubectl create secret"]
+    end
+
+    subgraph Init["auth init (in-container)"]
+        I1["docker/kubectl exec"] --> I2["Browser OAuth flows"]
+        I2 --> I3["Persistent volume<br/>/home/agentflow/.credentials/"]
+    end
+
+    S4 --> ORCH["Orchestrator"]
+    S5 --> ORCH
+    I3 --> ORCH
+    ORCH -->|local / docker| AGENT["Agent process<br/>(env vars)"]
+    ORCH -->|kubernetes| BROKER["Credential Broker<br/>(per-pod secrets)"]
+    BROKER --> POD["Agent pod"]
+
+    style Setup fill:#e3f2fd
+    style Init fill:#e8f5e9
+```
+
 ## Two Auth Paths
 
 ### `agentflow auth setup` (Host-Side)
@@ -161,11 +186,29 @@ JIRA_BASE_URL=https://myorg.atlassian.net
 
 In Kubernetes, the orchestrator runs a Credential Broker to manage per-pod credentials for agent Jobs. This is automatic — no additional configuration needed beyond the main `credential_secret_name` in [job runner config](configuration.md#job-runner).
 
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator
+    participant PVC as Master creds (PVC)
+    participant K as Kubernetes API
+    participant Pod as Agent pod
+
+    O->>PVC: read master credentials
+    Note over O: refresh Codex token if older than 7 days
+    O->>K: create ephemeral Secret<br/>(provider-specific, scoped to this run)
+    O->>K: create agent Job (mounts the Secret)
+    K->>Pod: init container copies creds → /tmp
+    Pod->>Pod: agent runs with credentials
+    Pod-->>K: pod completes
+    O->>K: delete ephemeral Secret
+```
+
 The broker:
 
 1. Holds master credentials on the orchestrator's PVC
 2. Before spawning each agent pod, creates an ephemeral Kubernetes Secret with provider-specific credentials
 3. Mounts the Secret into the agent pod
+4. Deletes the ephemeral Secret after the pod completes
 
 Per-provider behavior:
 

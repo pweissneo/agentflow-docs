@@ -59,6 +59,7 @@ nav:
       - Overview: how-it-works/overview.md
       - Workflow States: how-it-works/workflow-states.md
       - Agents: how-it-works/agents.md
+      - Webhooks: how-it-works/webhooks.md
   - Customization:
       - AI Providers: customization/providers.md
       - Project-Specific Prompts: customization/project-prompts.md
