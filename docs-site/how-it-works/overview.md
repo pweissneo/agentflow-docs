@@ -98,7 +98,7 @@ A **Developer Agent** is spawned with a fresh context (no memory of the research
 3. Implements the changes
 4. Runs local checks (setup commands, lint, test)
 5. Commits and pushes
-6. Creates or updates a pull request
+6. Creates or updates a pull request (GitHub) or merge request (GitLab)
 
 If CI fails, the orchestrator re-spawns the developer agent with CI failure context. By default the **CI Verdict Gate** is enabled: the CI result is modeled as a verdict and CI must pass before reviewers are spawned. CI failures and review rejections then share a single **unified fix counter** (`max_fix_iterations`, default 5) before quarantine. When the gate is disabled (`ci_verdict_gate: false`), the legacy separate counters apply (`max_ci_failures` and `max_review_iterations`, each default 3). See [Configuration](../configuration.md#ci-and-fix-iterations).
 

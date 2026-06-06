@@ -80,10 +80,13 @@ Each state maps to exactly one `agent:*` label. The orchestrator removes the pre
 | FAILED | `agent:failed` |
 | QUARANTINED | `agent:quarantine` |
 
-- **GitHub:** Labels are stored as GitHub issue labels (native label API).
+- **GitHub:** Labels are stored as GitHub issue labels (native label API, auto-created on first use).
 - **Jira:** Labels are stored in the Jira `labels` field (free-form text tags, no admin configuration required).
 
-Additional non-state labels: `agent:pr` (marks Agentflow PRs), `needs-review`, `needs-owner`.
+!!! note "Where state lives with GitLab"
+    GitLab is an **SCM provider only** — it is not a work-item backend. A `scm: gitlab` repo therefore uses Jira for work items, and the `agent:*` **state** labels live in Jira. On the GitLab side, the orchestrator applies SCM-side labels (e.g. `agent:pr`) to merge requests. Unlike GitHub, GitLab does not auto-create labels, so the orchestrator **pre-creates the `agent:*` label family on each GitLab project at startup** (requires `api` scope).
+
+Additional non-state labels: `agent:pr` (marks Agentflow PRs/MRs), `needs-review`, `needs-owner`.
 
 ## Jira Board Projection
 

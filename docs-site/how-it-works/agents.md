@@ -33,7 +33,7 @@ Spawned during the IN_PROGRESS state. Has write access to the repository.
 4. Runs setup commands and checks (if configured)
 5. Commits, pushes, and creates/updates the PR
 
-**Output:** A pull request on GitHub.
+**Output:** A pull request (GitHub) or merge request (GitLab). The orchestrator treats both identically; "PR" in this documentation means either.
 
 The developer agent is re-spawned in three fix scenarios:
 

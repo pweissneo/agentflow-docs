@@ -168,6 +168,31 @@ Required scopes depend on the agent role:
 
 You can assign different tokens per role in the [configuration](configuration.md#github).
 
+## GitLab
+
+For repos with `scm: gitlab`, Agentflow authenticates with a **Group or Project Access Token** carrying the `api` and `write_repository` scopes.
+
+**Per-repo token env var.** Because two GitLab repos may live in different groups with distinct tokens, the credential is resolved per repo: the repo key is uppercased, non-alphanumeric characters become `_`, and `_GITLAB_TOKEN` is appended.
+
+| Repo key (in `repos:`) | Token env var |
+|------------------------|---------------|
+| `platform` | `PLATFORM_GITLAB_TOKEN` |
+| `acme.platform` | `ACME_PLATFORM_GITLAB_TOKEN` |
+
+Set it like any other credential:
+
+```bash
+# .env.docker or environment
+PLATFORM_GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
+```
+
+`agentflow auth setup` detects every `scm: gitlab` repo and prompts for its token, writing the correctly-named env var to `.env.docker` (or the K8s Secret with `--target k8s`).
+
+!!! note "Token expiry and rotation"
+    GitLab Group/Project Access Tokens have a mandatory expiry (default 365 days since GitLab 16.0). Agentflow can auto-rotate the token via the self-rotation endpoint once ~80% of its lifetime has elapsed. **Auto-rotation must be disabled for GitOps/SealedSecret-managed deployments** (the running orchestrator cannot mutate a Git-tracked sealed secret) — there, the `agentflow_scm_token_expiry_seconds` metric warns ahead of expiry and you rotate manually.
+
+**Label pre-creation:** unlike GitHub, GitLab does not auto-create labels on first use. At startup the orchestrator pre-creates the `agent:*` label family on each GitLab project. If creation fails (insufficient token scope), the orchestrator refuses to start with a clear error.
+
 ## Jira
 
 Jira uses email + API token authentication.

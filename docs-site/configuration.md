@@ -84,7 +84,7 @@ repos:
 
 **Label pre-creation:** At startup, Agentflow automatically creates the `agent:*` label family on every GitLab project that needs it. If label creation fails (for example, due to insufficient token permissions), the orchestrator refuses to start and logs a clear error identifying the affected repo.
 
-**Token:** GitLab repos require a Group or Project Access Token with `api` and `write_repository` scopes. Inject it via the `agentflow auth` CLI — see [Authentication](authentication.md) for details.
+**Token:** GitLab repos require a Group or Project Access Token with `api` and `write_repository` scopes. It is resolved from a **per-repo env var** named `<REPOKEY>_GITLAB_TOKEN` (e.g. repo key `platform` → `PLATFORM_GITLAB_TOKEN`), so repos in different groups can use distinct tokens. Inject it via `agentflow auth setup` — see [Authentication > GitLab](authentication.md#gitlab) for the naming rule and rotation behavior.
 
 **`ci_check_method`:** GitLab does not split CI results into "check runs" and "commit statuses." Leave `ci_check_method` unset (or set it to `"none"`) for GitLab repos.
 

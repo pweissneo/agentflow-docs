@@ -64,6 +64,14 @@ Common causes:
 - Token may be expired or revoked
 - **403 on Check Runs API:** Fine-grained PATs do not have a `checks:read` permission. If you see `"Resource not accessible by personal access token"` during CI polling, switch to a classic PAT with `repo` scope or set `ci_check_method: "status"` in your repo config
 
+### GitLab: "401 Unauthorized" or label pre-creation fails
+
+GitLab repos (`scm: gitlab`) authenticate with a Group/Project Access Token resolved from a per-repo env var named `<REPOKEY>_GITLAB_TOKEN` (e.g. repo `platform` → `PLATFORM_GITLAB_TOKEN`). See [Authentication > GitLab](authentication.md#gitlab).
+
+- **401 / 403:** verify the token has both `api` and `write_repository` scopes, and that the env var name matches the repo key exactly (uppercased, non-alphanumeric → `_`).
+- **"Failed to create label" at startup:** GitLab does not auto-create labels. The orchestrator pre-creates the `agent:*` family on startup; this needs `api` scope. A missing scope makes the orchestrator refuse to start — fix the token scope and restart.
+- **Token expired:** GitLab access tokens have a mandatory expiry. Check the `agentflow_scm_token_expiry_seconds` metric; rotate the token (manually for GitOps/SealedSecret deployments).
+
 ## Agent Failures
 
 ### Agent stuck in CLAIMED / RESEARCHING / IN_PROGRESS
@@ -124,30 +132,36 @@ providers:
 !!! note "Error message diagnostics"
     When a CLI tool exits with a non-zero code and writes nothing to stderr, Agentflow includes the first 500 characters of stdout in the error message. This helps diagnose rate limits and usage caps where the CLI writes errors to stdout instead of stderr. Check the orchestrator logs for the full error output.
 
-## PR Issues
+## PR / MR Issues
 
-### PR not being created
+### PR/MR not being created
 
 Check in order:
 
 1. **Is the issue claimed?** Look for the `agent:claimed` or `agent:in-progress` label.
 2. **Did research complete?** Look for a research summary comment on the issue.
 3. **Check orchestrator logs** for errors during the developer agent phase.
-4. **GitHub token scopes** — the developer token needs `repo` scope to push branches and create PRs.
+4. **Token scopes** — GitHub: the developer token needs `repo` scope to push branches and create PRs. GitLab: the access token needs `api` + `write_repository` (see [Authentication > GitLab](authentication.md#gitlab)).
 
-### PR created but CI not detected
+### CI not detected after PR/MR opened
 
-Check `ci_check_method` in your repo config:
+=== "GitHub"
 
-```yaml
-repos:
-  myproject:
-    ci_check_method: "checks"  # "status", "checks", or "none"
-```
+    Check `ci_check_method` in your repo config:
 
-- `"checks"` (default) — uses GitHub Check Runs API (requires classic PAT with `repo` scope)
-- `"status"` — uses GitHub Commit Status API (works with fine-grained PATs)
-- `"none"` — skips CI, goes directly to review
+    ```yaml
+    repos:
+      myproject:
+        ci_check_method: "checks"  # "status", "checks", or "none"
+    ```
+
+    - `"checks"` (default) — uses GitHub Check Runs API (requires classic PAT with `repo` scope)
+    - `"status"` — uses GitHub Commit Status API (works with fine-grained PATs)
+    - `"none"` — skips CI, goes directly to review
+
+=== "GitLab"
+
+    GitLab has no checks/statuses split — CI status comes from the latest **pipeline** for the MR's head SHA. Leave `ci_check_method` unset (or `"none"`). A `manual` pipeline (awaiting a human start) is treated as `pending` and will never auto-progress — the orchestrator logs a warning. Ensure the project has a `.gitlab-ci.yml` and a runner available.
 
 If CI hasn't reported yet, `ci_zero_check_grace_period_s` controls how long to wait.
 
